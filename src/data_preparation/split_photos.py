@@ -18,11 +18,11 @@ def split_photos():
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    # remove all files in the output directory
+    # remove all .jpg files in the output directory
     for file in os.listdir(output_folder):
         file_path = os.path.join(output_folder, file)
         try:
-            if os.path.isfile(file_path):
+            if os.path.isfile(file_path) and file.endswith(".jpg"):
                 os.unlink(file_path)
         except Exception as e:
             print(e)
