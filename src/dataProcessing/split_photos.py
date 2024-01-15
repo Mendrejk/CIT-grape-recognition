@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ElementTree
+from PIL import Image
 
 
 def split_photos():
@@ -10,6 +11,19 @@ def split_photos():
     annotations = os.listdir(resources_path + "/annotations")
     # get the list of all the files in the photos folder
     photos = os.listdir(resources_path + "/photos")
+
+    output_folder = resources_path + "/splitPhotos"
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # remove all files in the output directory
+    for file in os.listdir(output_folder):
+        file_path = os.path.join(output_folder, file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(e)
 
     # for each file in the annotations folder
     for annotation in annotations:
@@ -27,12 +41,6 @@ def split_photos():
                 photo_path = resources_path + "/photos/" + photo_name
                 # get the annotation file path
                 annotation_path = resources_path + "/annotations/" + file_name_with_extension
-                # get the output folder path
-                output_folder = resources_path + "/splitPhotos/" + file_name
-                # if the output folder does not exist
-                if not os.path.exists(output_folder):
-                    # create the output folder
-                    os.makedirs(output_folder)
                 # split the photo
                 split_photo(photo_path, annotation_path, output_folder)
 
@@ -47,10 +55,10 @@ def split_photo(photo_path: str, annotation_path: str, output_folder: str):
         # get the bounding box
         bndbox = obj.find('bndbox')
         # get the bounding box values
-        x_min = int(bndbox.find('xmin').text)
-        y_min = int(bndbox.find('ymin').text)
-        x_max = int(bndbox.find('xmax').text)
-        y_max = int(bndbox.find('ymax').text)
+        x_min = int(float(bndbox.find('xmin').text))
+        y_min = int(float(bndbox.find('ymin').text))
+        x_max = int(float(bndbox.find('xmax').text))
+        y_max = int(float(bndbox.find('ymax').text))
 
         # get the width of the bounding box
         width = x_max - x_min
@@ -70,21 +78,13 @@ def split_photo(photo_path: str, annotation_path: str, output_folder: str):
 
 def crop_photo(photo_path: str, output_file_path: str, x_min: int, y_min: int, width: int, height: int):
     # open the photo
-    photo = open(photo_path, "rb")
-    # read the photo
-    photo_read = photo.read()
-    # close the photo
-    photo.close()
+    photo = Image.open(photo_path)
 
     # crop the photo
-    cropped_photo = photo_read[y_min:y_min + height, x_min:x_min + width]
+    cropped_photo = photo.crop((x_min, y_min, x_min + width, y_min + height))
 
-    # open the output file
-    output_file = open(output_file_path, "wb")
-    # write the cropped photo to the output file
-    output_file.write(cropped_photo)
-    # close the output file
-    output_file.close()
+    # save the cropped photo to the output file
+    cropped_photo.save(output_file_path)
 
 
 if __name__ == "__main__":
