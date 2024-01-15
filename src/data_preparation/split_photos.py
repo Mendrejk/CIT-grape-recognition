@@ -2,6 +2,8 @@ import os
 import xml.etree.ElementTree as ElementTree
 from PIL import Image
 
+from src.data_preparation.extract_grape_info import extract_grape_info
+
 
 def split_photos():
     # path to the resources directory
@@ -52,18 +54,7 @@ def split_photo(photo_path: str, annotation_path: str, output_folder: str):
 
     # for each 'object' in the annotation
     for obj in root.findall('object'):
-        # get the bounding box
-        bndbox = obj.find('bndbox')
-        # get the bounding box values
-        x_min = int(float(bndbox.find('xmin').text))
-        y_min = int(float(bndbox.find('ymin').text))
-        x_max = int(float(bndbox.find('xmax').text))
-        y_max = int(float(bndbox.find('ymax').text))
-
-        # get the width of the bounding box
-        width = x_max - x_min
-        # get the height of the bounding box
-        height = y_max - y_min
+        x_min, y_min, width, height, _ = extract_grape_info(obj)
 
         # get the photo file name
         photo_name = photo_path[photo_path.rfind("/") + 1:]
