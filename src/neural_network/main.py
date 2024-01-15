@@ -16,7 +16,7 @@ import numpy as np
 from keras import Sequential
 from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from keras.preprocessing.image import array_to_img
-from keras.callbacks import Callback, History
+from keras.callbacks import Callback, History, EarlyStopping
 from keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.image import load_img, img_to_array
@@ -36,7 +36,7 @@ def main():
     # Define the hyperparameters and options to test
     should_normalise_colours_options: List[bool] = [True, False]
     model_sizes: List[ModelSize] = [ModelSize.NORMAL, ModelSize.BIGGER, ModelSize.BIGGEST]
-    learning_rates = [0.001, 0.01, 0.1]
+    learning_rates = [0.0005, 0.001, 0.002, 0.005]
 
     results_dir = "../../results"
 
@@ -56,8 +56,9 @@ def main():
 
                 # Create a plot of the accuracy over the epochs
                 plt.figure()
-                plt.plot(history.history['accuracy'])
-                plt.plot(history.history['val_accuracy'])
+                epochs = list(range(1, len(history.history['acc']) + 1))
+                plt.plot(epochs, history.history['acc'])
+                plt.plot(epochs, history.history['val_acc'])
                 plt.title('Model accuracy')
                 plt.ylabel('Accuracy')
                 plt.xlabel('Epoch')
@@ -118,8 +119,8 @@ def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: 
     # Validation set: 15% (30% * 0.5)
     # Test set: 15% (30% * 0.5)
     data_items: List[ImageAnnotationPair] = list(paired_data.values())
-    train_items, test_items = train_test_split(data_items, test_size=0.3, random_state=42)
-    validation_items, test_items = train_test_split(test_items, test_size=0.5, random_state=42)
+    train_items, test_items = train_test_split(data_items, test_size=0.3, random_state=42, shuffle=True)
+    validation_items, test_items = train_test_split(test_items, test_size=0.5, random_state=42, shuffle=True)
 
     train_images, train_bbch_values = zip(*[(item.image, item.bbch) for item in train_items])
     validation_images, validation_bbch_values = zip(*[(item.image, item.bbch) for item in validation_items])
@@ -188,11 +189,14 @@ def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: 
     # Evaluate the untrained model with the test data
     untrained_test_loss, untrained_test_accuracy = model.evaluate(np.array(test_images), np.array(test_bbch_values), verbose=2)
 
+    # Add early stopping
+    early_stopping = EarlyStopping(monitor='val_loss', patience=7)
+
     # Fit the model with validation data
     time_callback = TimeHistory()
     history: History = model.fit(np.array(train_images), train_bbch_values,
               validation_data=(np.array(validation_images), validation_bbch_values),
-              epochs=50, shuffle=True, callbacks=[time_callback])
+              epochs=50, shuffle=True, callbacks=[time_callback, early_stopping])
 
     # After training, evaluate the model with the test data
     test_loss, test_accuracy = model.evaluate(np.array(test_images), np.array(test_bbch_values))
