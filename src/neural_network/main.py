@@ -1,7 +1,11 @@
 # use amd gpu
-# from os import environ
-# environ["KERAS_BACKEND"] = "plaidml.keras.backend"
-# import keras
+from os import environ
+environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+import keras
+
+from enum import Enum
+
+from keras.optimizers import Adam
 
 import time
 import os
@@ -10,23 +14,61 @@ from xml.etree import ElementTree
 
 import numpy as np
 from keras import Sequential
-from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from keras.preprocessing.image import array_to_img
-from keras.callbacks import Callback
+from keras.callbacks import Callback, History
 from keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.image import load_img, img_to_array
 
 from src.data_preparation.extract_grape_info import extract_grape_info
 
+import matplotlib.pyplot as plt
+
+
+class ModelSize(Enum):
+    NORMAL = 1
+    BIGGER = 2
+    BIGGEST = 3
+
 
 def main():
-    should_normalise_colours: bool = True
-    use_alternative_model: bool = False
-    learn(should_normalise_colours, use_alternative_model)
+    # Define the hyperparameters and options to test
+    should_normalise_colours_options: List[bool] = [True, False]
+    model_sizes: List[ModelSize] = [ModelSize.NORMAL, ModelSize.BIGGER, ModelSize.BIGGEST]
+    learning_rates = [0.001, 0.01, 0.1]
+
+    results_dir = "../../results"
+
+    # Loop over all combinations of hyperparameters and options
+    for should_normalise_colours in should_normalise_colours_options:
+        for model_size in model_sizes:
+            for lr in learning_rates:
+                print(
+                    f"\nTraining model with color normalization: {should_normalise_colours}, model size: {model_size}, learning rate: {lr}")
+                test_loss, test_accuracy, history = learn(should_normalise_colours, model_size, lr)
+
+                # Write the results to a file
+                results_file = os.path.join(results_dir, f"results_{should_normalise_colours}_{model_size}_{lr}.txt")
+                with open(results_file, "w") as f:
+                    f.write(f"Test Loss: {test_loss}\n")
+                    f.write(f"Test Accuracy: {test_accuracy}\n")
+
+                # Create a plot of the accuracy over the epochs
+                plt.figure()
+                plt.plot(history.history['accuracy'])
+                plt.plot(history.history['val_accuracy'])
+                plt.title('Model accuracy')
+                plt.ylabel('Accuracy')
+                plt.xlabel('Epoch')
+                plt.legend(['Train', 'Validation'], loc='upper left')
+
+                # Save the plot to the results directory
+                plot_file = os.path.join(results_dir, f"plot_{should_normalise_colours}_{model_size}_{lr}.png")
+                plt.savefig(plot_file)
 
 
-def learn(should_normalise_colours: bool, use_alternative_model: bool):
+def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: float) -> Tuple[float, float, History]:
     # Load and preprocess the data
     resources_dir: str = '../../resources/'
     image_dir: str = resources_dir + 'splitPhotos'
@@ -98,7 +140,14 @@ def learn(should_normalise_colours: bool, use_alternative_model: bool):
     test_bbch_values = to_categorical(test_bbch_values, num_classes=len(bbch_to_class))
 
     # Add layers to the model
-    if use_alternative_model:
+    if model_size == ModelSize.NORMAL:
+        model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(128, 128, 3)))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Conv2D(64, (3, 3), activation='relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Flatten())
+        model.add(Dense(128, activation='relu'))
+    elif model_size == ModelSize.BIGGER:
         # More filters in convolutional layers and more neurons in dense layers
         model.add(Conv2D(64, (3, 3), activation='relu', input_shape=(128, 128, 3)))
         model.add(MaxPooling2D(pool_size=(2, 2)))
@@ -107,23 +156,41 @@ def learn(should_normalise_colours: bool, use_alternative_model: bool):
         model.add(Flatten())
         model.add(Dense(256, activation='relu'))
     else:
-        # Define original model architecture
+        # this model adds more convolutional layers and utilises dropout layers in order to reduce data overfitting
+        # First convolutional block
         model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(128, 128, 3)))
+        model.add(Conv2D(32, (3, 3), activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+
+        # Second convolutional block
+        model.add(Conv2D(64, (3, 3), activation='relu'))
         model.add(Conv2D(64, (3, 3), activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+
+        # Third convolutional block
+        model.add(Conv2D(128, (3, 3), activation='relu'))
+        model.add(Conv2D(128, (3, 3), activation='relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+
+        # Fully connected layers
         model.add(Flatten())
-        model.add(Dense(128, activation='relu'))
+        model.add(Dense(512, activation='relu'))
+        model.add(Dropout(0.5))
+
     model.add(Dense(len(bbch_to_class), activation='softmax'))
 
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    optimizer = Adam(lr=learning_rate)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
     # Evaluate the untrained model with the test data
     untrained_test_loss, untrained_test_accuracy = model.evaluate(np.array(test_images), np.array(test_bbch_values), verbose=2)
 
     # Fit the model with validation data
     time_callback = TimeHistory()
-    model.fit(np.array(train_images), train_bbch_values,
+    history: History = model.fit(np.array(train_images), train_bbch_values,
               validation_data=(np.array(validation_images), validation_bbch_values),
               epochs=50, shuffle=True, callbacks=[time_callback])
 
@@ -133,6 +200,8 @@ def learn(should_normalise_colours: bool, use_alternative_model: bool):
     print(f"Test Accuracy: {test_accuracy}")
     print(f"Untrained model, Test Loss: {untrained_test_loss}")
     print(f"Untrained model, Test Accuracy: {untrained_test_accuracy}")
+
+    return test_loss, test_accuracy, history
 
 
 class ImageAnnotationPair:
