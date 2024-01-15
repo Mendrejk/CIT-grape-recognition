@@ -40,13 +40,16 @@ def main():
 
     results_dir = "../../results"
 
+    # Load and preprocess the data
+    paired_data = load_and_preprocess_data()
+
     # Loop over all combinations of hyperparameters and options
     for should_normalise_colours in should_normalise_colours_options:
         for model_size in model_sizes:
             for lr in learning_rates:
                 print(
                     f"\nTraining model with color normalization: {should_normalise_colours}, model size: {model_size}, learning rate: {lr}")
-                test_loss, test_accuracy, history = learn(should_normalise_colours, model_size, lr)
+                test_loss, test_accuracy, history = learn(should_normalise_colours, model_size, lr, paired_data)
 
                 # Write the results to a file
                 results_file = os.path.join(results_dir, f"results_{should_normalise_colours}_{model_size}_{lr}.txt")
@@ -69,27 +72,7 @@ def main():
                 plt.savefig(plot_file)
 
 
-def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: float) -> Tuple[float, float, History]:
-    # Load and preprocess the data
-    resources_dir: str = '../../resources/'
-    image_dir: str = resources_dir + 'splitPhotos'
-    image_files: List[str] = os.listdir(image_dir)
-    images: dict = {file[:-4]: img_to_array(load_img(os.path.join(image_dir, file))) for file in image_files if
-                    file.endswith('.jpg')}
-
-    annotation_dir: str = resources_dir + 'annotations'
-    annotation_files: List[str] = os.listdir(annotation_dir)
-    annotations: dict = {file[:-4]: load_annotations(os.path.join(annotation_dir, file)) for file in annotation_files}
-
-    # Pair each image with its annotation
-    paired_data: dict = {}
-    for filename, image in images.items():
-        uuid, x_min, y_min, width, height = filename.split('_')
-        for annotation in annotations[uuid]:
-            if annotation[:4] == (int(x_min), int(y_min), int(width), int(height)):
-                paired_data[filename] = ImageAnnotationPair(filename, image, annotation)
-                break
-
+def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: float, paired_data: dict) -> Tuple[float, float, History]:
     if should_normalise_colours:
         # Normalize the images (scale all pixel values to be between 0 and 1)
         for filename, image_annotation_pair in paired_data.items():
@@ -206,6 +189,30 @@ def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: 
     print(f"Untrained model, Test Accuracy: {untrained_test_accuracy}")
 
     return test_loss, test_accuracy, history
+
+
+def load_and_preprocess_data() -> dict:
+    # Load and preprocess the data
+    resources_dir: str = '../../resources/'
+    image_dir: str = resources_dir + 'splitPhotos'
+    image_files: List[str] = os.listdir(image_dir)
+    images: dict = {file[:-4]: img_to_array(load_img(os.path.join(image_dir, file))) for file in image_files if
+                    file.endswith('.jpg')}
+
+    annotation_dir: str = resources_dir + 'annotations'
+    annotation_files: List[str] = os.listdir(annotation_dir)
+    annotations: dict = {file[:-4]: load_annotations(os.path.join(annotation_dir, file)) for file in annotation_files}
+
+    # Pair each image with its annotation
+    paired_data: dict = {}
+    for filename, image in images.items():
+        uuid, x_min, y_min, width, height = filename.split('_')
+        for annotation in annotations[uuid]:
+            if annotation[:4] == (int(x_min), int(y_min), int(width), int(height)):
+                paired_data[filename] = ImageAnnotationPair(filename, image, annotation)
+                break
+
+    return paired_data
 
 
 class ImageAnnotationPair:
