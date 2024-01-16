@@ -1,5 +1,8 @@
 # use amd gpu
 from os import environ
+
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+
 environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 import keras
 
@@ -49,13 +52,22 @@ def main():
             for lr in learning_rates:
                 print(
                     f"\nTraining model with color normalization: {should_normalise_colours}, model size: {model_size}, learning rate: {lr}")
-                test_loss, test_accuracy, history = learn(should_normalise_colours, model_size, lr, paired_data)
+                test_loss, test_accuracy, history, test_predictions, test_bbch_labels = learn(should_normalise_colours, model_size, lr, paired_data)
+
+                conf_matrix = confusion_matrix(test_bbch_labels, test_predictions)
+                accuracy = accuracy_score(test_bbch_labels, test_predictions)
+                precision = precision_score(test_bbch_labels, test_predictions, average='weighted')
+                sensitivity = recall_score(test_bbch_labels, test_predictions, average='weighted')
+                f1 = f1_score(test_bbch_labels, test_predictions, average='weighted')
 
                 # Write the results to a file
                 results_file = os.path.join(results_dir, f"results_{should_normalise_colours}_{model_size}_{lr}.txt")
                 with open(results_file, "w") as f:
                     f.write(f"Test Loss: {test_loss}\n")
                     f.write(f"Test Accuracy: {test_accuracy}\n")
+                    f.write(f"Precision: {precision}\n")
+                    f.write(f"Sensitivity: {sensitivity}\n")
+                    f.write(f"F-1 Measure: {f1}\n")
 
                 # Create a plot of the accuracy over the epochs
                 plt.figure()
@@ -71,8 +83,21 @@ def main():
                 plot_file = os.path.join(results_dir, f"plot_{should_normalise_colours}_{model_size}_{lr}.png")
                 plt.savefig(plot_file)
 
+                # Create a plot of the confusion matrix
+                plt.figure()
+                sns.heatmap(conf_matrix, annot=True, fmt='d')
+                plt.title('Confusion Matrix')
+                plt.xlabel('Predicted')
+                plt.ylabel('True')
 
-def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: float, paired_data: dict) -> Tuple[float, float, History]:
+                # Save the confusion matrix plot to the results directory
+                conf_matrix_file = os.path.join(results_dir, f"conf_matrix_{should_normalise_colours}_{model_size}_{lr}.png")
+                plt.savefig(conf_matrix_file)
+
+                #todo remove lingering plots
+
+
+def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: float, paired_data: dict):
     if should_normalise_colours:
         # Normalize the images (scale all pixel values to be between 0 and 1)
         for filename, image_annotation_pair in paired_data.items():
@@ -188,7 +213,13 @@ def learn(should_normalise_colours: bool, model_size: ModelSize, learning_rate: 
     print(f"Untrained model, Test Loss: {untrained_test_loss}")
     print(f"Untrained model, Test Accuracy: {untrained_test_accuracy}")
 
-    return test_loss, test_accuracy, history
+    # Predict the classes of the test set
+    test_predictions = model.predict_classes(np.array(test_images))
+
+    # Convert one-hot encoded test_bbch_values back to class labels
+    test_bbch_labels = np.argmax(test_bbch_values, axis=1)
+
+    return test_loss, test_accuracy, history, test_predictions, test_bbch_labels
 
 
 def load_and_preprocess_data() -> dict:
